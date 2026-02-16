@@ -1,0 +1,334 @@
+####################################################################################################################################################
+#########################################################-------HARTREE_FOCK_PROGRAM-------#########################################################
+####################################################################################################################################################
+
+#Importing libraries.
+from cmath import exp, sqrt
+from math import erf
+import numpy as np
+
+#################################################################################################################################################### 
+
+#Defining a function that reads the input file.
+def reading(file_name, keyword):
+
+    with open(file_name, "r") as input:
+        text = input.readlines()
+
+    foundline = False
+    data = []
+    for line in text:
+        not_edited_line = line
+
+        #Formatting the text.
+        line = line.replace("\n", "")
+        line = (list(filter(None, line.split(" "))))
+       
+        #Storing the data.
+        i = 0 
+        for a in line:  
+            try:
+                line[i] = eval(line[i])
+                #when it's a string
+            except:
+                line[i] = line[i]
+            i += 1
+
+        if len(line) > 1:
+            if type(line[1]) is str:
+                foundline = False
+                
+        if foundline is True:
+            data += [line]
+
+        if keyword in not_edited_line:
+            foundline = True   
+    return data
+
+#Defining a function that calculates the nuclear repulsion.
+def nuclear_repulsion(coord, number_of_atoms):
+
+    N  = number_of_atoms[0][0]
+    V_nuc = 0  
+    for i in np.arange(N-1):
+        for j in np.arange(i+1, N):
+            Zi = coord[i][1]
+            xi, yi, zi = coord[i][2], coord[i][3], coord[i][4]
+            Zj = coord[j][1]
+            xj, yj, zj = coord[j][2], coord[j][3], coord[j][4]
+            rij = np.sqrt((xj-xi)**2 + (yj-yi)**2 + (zj-zi)**2)
+            rij_bohr = rij * 1.8897261246
+            rij_mod = abs(rij_bohr)
+            V_nuc += (Zi * Zj)/rij_mod
+
+    return V_nuc
+
+#Defining a function that reads the basis set section.
+def basis_set(file_name):
+
+    with open(file_name, "r") as input:
+        text = input.readlines()
+
+    property_1 = []
+    string = 'Basis'
+    start_storing = False
+    for line in text:
+        line = line.replace("\n", "")
+        line = (list(filter(None, line.split(" "))))
+        
+        i = 0 
+        for a in line:  
+            try:
+                line[i] = eval(line[i])
+            except:
+                line[i] = line[i]
+            i += 1
+       
+        if type(line[0]) is str:
+            start_storing = False
+
+        if start_storing is True:
+            property_1 += [line]
+
+        if str(line[0]) in string:
+            start_storing = True
+    return property_1
+
+#Defining the Boys function.
+def F_0(x):
+    if x < 10**-5:
+        F = 1
+    else:
+        F = 1/2 * np.sqrt(np.pi/x)*erf(np.sqrt(x))
+    return F
+    
+#Defining a function that computes the one-electron integrals S, V and T.
+def one_e_int(basis_fix, mu, ni):
+    S=0 
+    T=0
+    V=0
+    r = (np.linalg.norm(np.array(coord[basis_fix[mu][0][3]-1][2:])-np.array(coord[basis_fix[ni][0][3]-1][2:]))*1.8897261246)**2
+    for k in basis_fix[mu][2:]:
+        for l in basis_fix[ni][2:]:
+            zeta = k[0] + l[0]
+            csi = (k[0]*l[0])/zeta
+            S_kmulni = np.exp(-csi * r) * (np.pi/zeta)**(3/2)
+            S += k[1]*l[1]*S_kmulni
+            T_kmulni = csi * (3-2*csi*r) * S_kmulni
+            T += k[1]*l[1]*T_kmulni 
+            r_p = ((k[0]*np.array(coord[basis_fix[mu][0][3]-1][2:])) + (l[0]*np.array(coord[basis_fix[ni][0][3]-1][2:])))/zeta
+            for N in coord:
+                r_ip = np.linalg.norm(N[2:]-r_p)*1.8897261246
+                V_kmulnin = -2*N[1]*np.sqrt(zeta/np.pi)*S_kmulni*F_0(zeta*(r_ip**2))
+                V += k[1]*l[1]*V_kmulnin
+    return S, T, V 
+
+#Defining a function that computes the two-electron integrals.
+def two_e_int(basis_fix, mu, ni, la, si):
+    K = 0 
+    for k in basis_fix[mu][2:]:
+        for l in basis_fix[ni][2:]:
+            for m in basis_fix[la][2:]:
+                for n in basis_fix[si][2:]:
+                    zeta_prime = m[0] + n[0]
+                    csi_prime = (m[0]*n[0])/zeta_prime
+                    r_q = (m[0]*np.array(coord[basis_fix[la][0][3]-1][2:]) + n[0]*np.array(coord[basis_fix[si][0][3]-1][2:]))/zeta_prime
+                    r_prime = (np.linalg.norm(np.array(coord[basis_fix[la][0][3]-1][2:])-np.array(coord[basis_fix[si][0][3]-1][2:]))*1.8897261246)**2
+                    zeta = k[0] + l[0]
+                    csi = (k[0]*l[0])/zeta
+                    r = (np.linalg.norm(np.array(coord[basis_fix[mu][0][3]-1][2:])-np.array(coord[basis_fix[ni][0][3]-1][2:]))*1.8897261246)**2
+                    K_kmulni = np.sqrt(2)*((np.pi**(5/4))/zeta)*np.exp(-csi*r)
+                    K_mlansi = np.sqrt(2)*((np.pi**(5/4))/zeta_prime)*np.exp(-csi_prime*r_prime)
+                    r_p = ((k[0]*np.array(coord[basis_fix[mu][0][3]-1][2:])) + (l[0]*np.array(coord[basis_fix[ni][0][3]-1][2:])))/zeta
+                    rho = (zeta*zeta_prime)/(zeta+zeta_prime)
+                    r_pq = np.linalg.norm(r_p-r_q)*1.8897261246
+                    K_8 = 1/(np.sqrt(zeta+zeta_prime) )*K_kmulni*K_mlansi*F_0(rho*(r_pq**2))
+                    K += (k[1] * l[1] * m[1] * n[1]) * K_8
+    
+    return K
+
+#################################################################################################################################################### 
+
+#Executing the functions: 
+file_name       = 'h4_sample.input'
+number_of_atoms = reading(file_name, 'number of atoms')
+coord           = reading(file_name, 'Atom labels, atom number, coords (Angstrom)')
+basis_funcs     = reading(file_name, 'Number of basis funcs')
+overall_charge  = reading(file_name, 'Overall charge')
+V_nuc           = nuclear_repulsion(coord,number_of_atoms)   
+basis_1         = basis_set(file_name)
+
+#This is the number of basis functions.
+b_f = basis_funcs[0][0]
+
+#Fix the list basis_1 to store the values in order to calculate the integrals (list of lists of lists).
+basis_fix = []
+i = 0
+j = 0
+for row in basis_1:
+    if len(row) == 4:
+        basis_fix += [basis_1[j:i]] 
+        j = i
+    i += 1 
+basis_fix = basis_fix[1:] + [basis_1[j:]]
+
+#Guess the density matrix.
+P = np.zeros((b_f, b_f))
+
+#Initialize matrices.
+S, T, V, twoel = np.zeros((b_f,b_f)), np.zeros((b_f,b_f)), np.zeros((b_f,b_f)), np.zeros((b_f,b_f,b_f,b_f))
+
+#Computing one and two electron integrals
+for mu in range(b_f):
+        for ni in range(mu + 1):
+            S[mu, ni], T[mu, ni], V[mu, ni] = one_e_int(basis_fix, mu, ni)
+            #Considering the symmetry.
+            S[ni, mu], T[ni, mu], V[ni, mu] = S[mu, ni], T[mu, ni], V[mu, ni]
+            for la in range(b_f):
+                for si in range(la + 1):
+                    #For each integral, the following relationships hold:
+                    if (mu*(mu+1)/2+ni) >= (la*(la+1)/2+si):
+                        #Considering that the integrals obey the eight-fold permutational symmetry relationships. 
+                        twoel[mu, ni, la, si] = twoel[la, si, mu, ni] = twoel[ni, mu, si, la] = twoel[si, la, ni, mu] = twoel[ni, mu, la, si] = twoel[si, la, mu, ni] = twoel[mu, ni, si, la] = twoel[la, si, ni, mu] = two_e_int(basis_fix, mu, ni, la ,si)
+
+#Computing the Core Hamiltonian.  
+H_core = T + V
+
+#Diagonalizing the overlap matrix S (lambda are the eigenvalues and L the matrix of eigenvectors).
+lambd, L = np.linalg.eigh(S) 
+#lambda^-1/2 is equal to a diagonal matrix in which the elements are the inverse square roots of the diagonal elements of lambda.
+lambd_square = np.diag(1/np.sqrt(lambd))
+#Obtaining the symmetric orthogonalization matrix X.
+X = np.matmul(L, np.matmul(lambd_square, np.transpose(L)))
+
+#Using the matrix X to orthogonalize the H_core matrix.
+H_core_ort = np.matmul(np.transpose(X), np.matmul(H_core,X))
+H_eigenval, H_eigenvec = np.linalg.eig(H_core_ort)
+
+E_elec = 0
+
+####################################################################################################################################################
+###############################################################-------SCF cycle-------##############################################################
+####################################################################################################################################################
+def SCF_cycle():
+
+    global E_elec, P, E_diff, P_diff, C, evalC, F, F_prime
+    #Storing the old value of the energy and of the density matrix to check the convergence.
+    Ei = E_elec
+    Pi = P 
+
+    #Get the matrix G (term that needs to be added to the H_core in order to obtain the Fock matrix).
+    G = np.zeros((b_f, b_f))
+    for mu in np.arange(b_f):
+        for ni in np.arange(b_f):
+            for la in np.arange(b_f):
+                for si in np.arange(b_f):
+                    G[mu, ni] += P[la, si] * (2*twoel[mu,ni,la,si]-twoel[mu,la,ni,si])
+
+    #Computing the matrix F, orthogonalizing, and diagonalizing it.
+    F = H_core + G
+    F_prime = np.matmul(np.transpose(X), np.matmul(F,X))
+    evalF_prime, C_prime = np.linalg.eigh(F_prime)
+
+    #Transform matrix C' back into original basis C, using the matrix X, then diagonalizing C to obtain the eigenvalues.
+    C = np.matmul(X, C_prime)
+    evalC, evectC = np.linalg.eigh(C)
+
+    #Calculating the electronic energy.
+    E_elec = 0
+    for mu in np.arange(b_f):
+        for ni in np.arange(b_f):
+            E_elec += P[mu, ni] * (H_core[mu, ni] + F[mu, ni])
+
+    #Calculating the number of occupied orbitals.
+    No = 0
+    for a in coord: 
+        No += a[1]
+    No = (No - overall_charge[0][0])/2
+
+    #Calculating the new density matrix P.
+    P = np.zeros((b_f, b_f))
+    for l in np.arange(b_f):
+        for s in np.arange(b_f):
+            for a in np.arange(int(No)):
+                P[l,s] += C[l, a] * C[s, a]
+
+    #Energy criterion.
+    E_diff = abs(E_elec - Ei)
+    
+    #Density criterion: standard deviation on successive density matrix elements.
+    P_diff = 0
+    for mu in np.arange(b_f):
+        for ni in np.arange(b_f):
+            P_diff += np.sqrt(((P[mu, ni] - Pi[mu, ni])**2))
+
+#((convergence threshold for E and P = 10^-6))#
+threshold_energy  = 10**-6
+threshold_density = 10**-6
+
+#Computing the SCF convergence, repeat the SCF_cycle until the energy and density critetion is reached.
+SCF_convergence = False
+iteration = 0
+while SCF_convergence is False: 
+    SCF_cycle()
+    iteration += 1
+    if (E_diff < threshold_energy) and (P_diff < threshold_density):
+        SCF_convergence = True
+
+############################################################################################################################################
+#########################################################----Writing the output----#########################################################
+############################################################################################################################################
+print('The input file is:', file_name)
+print()
+print('Overlap integrals:')
+for i in range(b_f):
+    for j in range(i+1):
+        print(i+1, ' ', j+1, '    ', S[i,j])
+
+print('Kinetic integrals:')
+for i in range(b_f):
+    for j in range(i+1):
+        print(i+1, ' ', j+1, '    ', T[i,j])
+
+print('Nuclear Attraction integrals:')
+for i in range(b_f):
+    for j in range(i+1):
+        print(i+1, ' ', j+1, '    ', V[i,j])
+
+print('Two-Electron integrals:')
+for i in range(b_f):
+    for j in range(i+1):
+        for k in range(i+1):
+            for l in range(i+1):
+                print(i+1, ' ', j+1, ' ', k+1, ' ',l+1, '    ', twoel[i,j,k,l])
+
+
+print()
+print('Nuclear repulsion energy: \n',  V_nuc)
+print()
+print('Inverse Square Root of Overlap Matrix S^-1/2: \n', X)
+print()
+print('Core Hamiltonian: \n', H_core)
+print()
+print('Core Hamiltonian in Orthogonal Basis: \n', H_core_ort)
+print()
+print('Eigenvalues of the core hamiltonian: \n', H_eigenval)
+print()
+print('SCF Procedure converged after cycles : \n', iteration)
+print()
+print(' Final electronic energy: \n', E_elec)
+print()
+print(' Final total energy: \n', E_elec + V_nuc)
+print()
+print('Converged orbital eigenvalues: \n', evalC)
+print()
+print('Converged orbital coefficients (orbital by orbital): \n', C)
+print()
+print('Final Fock matrix: \n', F)
+print()
+print('Final Fock matrix in orthogonal basis: \n', F_prime)
+print()
+print('Final density matrix: \n', P)
+print()
+
+
